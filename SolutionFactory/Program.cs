@@ -1,9 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
-using System.Threading.Tasks;
 using Fluent.IO;
 using NLog;
 using Onion.SolutionParser.Parser;
@@ -14,10 +14,9 @@ namespace SolutionFactory
     class Program
     {
         private static FactoryArgs parsedArgs;
-
         private static Logger logger = LogManager.GetCurrentClassLogger();
-
         private static List<string> ExtensionsToEdit = AppSettings.FileExtensionsToEdit.Split('|').ToList();
+        private static Dictionary<string, string> hashes = new();
 
         static void Main(string[] args)
         {
@@ -52,12 +51,8 @@ namespace SolutionFactory
                 ForceDeleteDirectory(target.FullPath);
                 target.CreateDirectory();
             }
-
-
-
-
-
-            Path baseDir = Path.Get(parsedArgs.PathToSolution);
+            
+            var baseDir = Path.Get(parsedArgs.PathToSolution);
 
             PrepareSolutionPath(baseDir);
 
@@ -77,7 +72,7 @@ namespace SolutionFactory
             string slnPath = target.Files("*.sln", false).FullPath;
             logger.Info("Remaing solution file " + slnPath);
 
-            var destFileName = System.IO.Path.GetDirectoryName(slnPath) + @"\" +  System.IO.Path.GetFileName(slnPath).PerformReplacements(parsedArgs);
+            var destFileName = $@"{System.IO.Path.GetDirectoryName(slnPath)}\{System.IO.Path.GetFileName(slnPath).PerformReplacements(parsedArgs, ref hashes)}";
             System.IO.File.Move(slnPath, destFileName);
             slnPath = destFileName;
             var parser = new SolutionParser(slnPath);
@@ -94,12 +89,12 @@ namespace SolutionFactory
 
                 solutionContents = solutionContents.Replace(oldGuid.ToString(), guid.ToString());
                 logger.Debug($"Adding replacement for {oldGuid} to {guid}");
-                solutionContents = solutionContents.PerformReplacements(parsedArgs);
+                solutionContents = solutionContents.PerformReplacements(parsedArgs, ref hashes);
             }
 
             target.Directories().Move(delegate (Path path)
             {
-                var pathToReplace = path.FullPath.Replace(target.FullPath, "").Substring(1).PerformReplacements(parsedArgs);
+                var pathToReplace = path.FullPath.Replace(target.FullPath, "").Substring(1).PerformReplacements(parsedArgs, ref hashes);
 
                 return Path.Get(target.FullPath, pathToReplace);
             });
@@ -109,11 +104,11 @@ namespace SolutionFactory
                 try
                 {
 
-                    var pathToReplace = path.FullPath.Replace(target.FullPath, "").Substring(1).PerformReplacements(parsedArgs);
+                    var pathToReplace = path.FullPath.Replace(target.FullPath, "").Substring(1).PerformReplacements(parsedArgs, ref hashes);
 
                     if (path.HasExtension && ExtensionsToEdit.Contains(path.Extension))
                     {
-                        string contents = path.Read().PerformReplacements(parsedArgs);
+                        string contents = path.Read().PerformReplacements(parsedArgs, ref hashes);
 
                         var theRegex = @"<IISUrl>http://.*?:(?<Port>\d+)/</IISUrl>";
 
@@ -153,8 +148,7 @@ namespace SolutionFactory
             if (!string.IsNullOrEmpty(strText))
             {
                 byte[] byteContents = Encoding.Unicode.GetBytes(strText);
-                System.Security.Cryptography.SHA256 hash =
-                    new System.Security.Cryptography.SHA256CryptoServiceProvider();
+                System.Security.Cryptography.SHA256 hash = new System.Security.Cryptography.SHA256CryptoServiceProvider();
                 byte[] hashText = hash.ComputeHash(byteContents);
                 Int64 hashCodeStart = BitConverter.ToInt64(hashText, 0);
                 Int64 hashCodeMedium = BitConverter.ToInt64(hashText, 8);
@@ -192,6 +186,33 @@ namespace SolutionFactory
             baseDir.Files("*.user", true).Delete();
             baseDir.Files("*.tss", true).Delete();
             baseDir.Files("*.suo", true).Delete();
+        }
+    }
+    
+    public class Random
+    {
+        public static string GetRandomString(int length, string characterSet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!?$%^&*()-_=+[]#';/")
+        {
+            if (length < 0)
+                throw new ArgumentException("length must not be negative", "length");
+            if (length > int.MaxValue / 8) // 250 million chars ought to be enough for anybody
+                throw new ArgumentException("length is too big", "length");
+            if (characterSet == null)
+                throw new ArgumentNullException("characterSet");
+            var characterArray = characterSet.Distinct().ToArray();
+            if (characterArray.Length == 0)
+                throw new ArgumentException("characterSet must not be empty", "characterSet");
+
+            var bytes = new byte[length * 8];
+            new RNGCryptoServiceProvider().GetBytes(bytes);
+            var result = new char[length];
+            for (int i = 0; i < length; i++)
+            {
+                ulong value = BitConverter.ToUInt64(bytes, i * 8);
+                result[i] = characterArray[value % (uint)characterArray.Length];
+            }
+
+            return new string(result);
         }
     }
 }
