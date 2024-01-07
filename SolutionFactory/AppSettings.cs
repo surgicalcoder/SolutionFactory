@@ -11,6 +11,7 @@ namespace SolutionFactory
         public static string SolutionFactoryKey { get { return GetConfigSettingItem("SolutionFactoryKey"); } }
         public static string SolutionFactoryFriendlyKey { get { return GetConfigSettingItem("SolutionFactoryFriendlyKey"); } }
         public static string FileExtensionsToEdit { get { return GetConfigSettingItem("FileExtensionsToEdit"); } }
+        public static string URLs { get { return GetConfigSettingItem("URLs"); } }
 
         private const string MISSING_CONFIG = "Invalid configuration. Required AppSettings section is missing";
         private const string INVALID_CONFIG_SETTING = "Invalid configuration setting name: {0}";

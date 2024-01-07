@@ -17,6 +17,7 @@ namespace SolutionFactory
         private static Logger logger = LogManager.GetCurrentClassLogger();
         private static List<string> ExtensionsToEdit = AppSettings.FileExtensionsToEdit.Split('|').ToList();
         private static Dictionary<string, string> hashes = new();
+        private static Dictionary<string, string> urls = new();
 
         static void Main(string[] args)
         {
@@ -37,6 +38,8 @@ namespace SolutionFactory
             logger.Info("Namespace = " + parsedArgs.Namespace);
             logger.Info("PathToSolution = " + parsedArgs.PathToSolution);
             // string nsOfSolution = parsedArgs.Namespace;
+
+            PerformPortMapping();
 
             Path target = Path.Get("output");
 
@@ -72,7 +75,7 @@ namespace SolutionFactory
             string slnPath = target.Files("*.sln", false).FullPath;
             logger.Info("Remaing solution file " + slnPath);
 
-            var destFileName = $@"{System.IO.Path.GetDirectoryName(slnPath)}\{System.IO.Path.GetFileName(slnPath).PerformReplacements(parsedArgs, ref hashes)}";
+            var destFileName = $@"{System.IO.Path.GetDirectoryName(slnPath)}\{System.IO.Path.GetFileName(slnPath).PerformReplacements(parsedArgs, ref hashes, urls)}";
             System.IO.File.Move(slnPath, destFileName);
             slnPath = destFileName;
             var parser = new SolutionParser(slnPath);
@@ -89,12 +92,12 @@ namespace SolutionFactory
 
                 solutionContents = solutionContents.Replace(oldGuid.ToString(), guid.ToString());
                 logger.Debug($"Adding replacement for {oldGuid} to {guid}");
-                solutionContents = solutionContents.PerformReplacements(parsedArgs, ref hashes);
+                solutionContents = solutionContents.PerformReplacements(parsedArgs, ref hashes, urls);
             }
 
             target.Directories().Move(delegate (Path path)
             {
-                var pathToReplace = path.FullPath.Replace(target.FullPath, "").Substring(1).PerformReplacements(parsedArgs, ref hashes);
+                var pathToReplace = path.FullPath.Replace(target.FullPath, "").Substring(1).PerformReplacements(parsedArgs, ref hashes, urls);
 
                 return Path.Get(target.FullPath, pathToReplace);
             });
@@ -104,11 +107,11 @@ namespace SolutionFactory
                 try
                 {
 
-                    var pathToReplace = path.FullPath.Replace(target.FullPath, "").Substring(1).PerformReplacements(parsedArgs, ref hashes);
+                    var pathToReplace = path.FullPath.Replace(target.FullPath, "").Substring(1).PerformReplacements(parsedArgs, ref hashes, urls);
 
                     if (path.HasExtension && ExtensionsToEdit.Contains(path.Extension))
                     {
-                        string contents = path.Read().PerformReplacements(parsedArgs, ref hashes);
+                        string contents = path.Read().PerformReplacements(parsedArgs, ref hashes, urls);
 
                         var theRegex = @"<IISUrl>http://.*?:(?<Port>\d+)/</IISUrl>";
 
@@ -136,6 +139,18 @@ namespace SolutionFactory
 
 
         }
+
+        private static void PerformPortMapping()
+        {
+            var rnd = new System.Random();
+            foreach (var s in AppSettings.URLs.Split(';'))
+            {
+                var uri = new Uri(s);
+                uri = uri.SetPort(rnd.Next(1025, 32768));
+                urls.Add(s, uri.ToString());
+            }
+        }
+
         private static int CalculatePortFromInput(string input)
         {
 
@@ -213,6 +228,13 @@ namespace SolutionFactory
             }
 
             return new string(result);
+        }
+    }
+    public static class UriExtensions {
+        public static Uri SetPort(this Uri uri, int newPort) {
+            var builder = new UriBuilder(uri);
+            builder.Port = newPort;
+            return builder.Uri;
         }
     }
 }
